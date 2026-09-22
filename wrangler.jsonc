@@ -1,0 +1,8 @@
+{
+  // Cloudflare Workers 部署配置：本站是纯静态站点，只需要声明构建产物目录
+  "name": "xuanshu",
+  "compatibility_date": "2026-09-01",
+  "assets": {
+    "directory": "./dist"
+  }
+}
