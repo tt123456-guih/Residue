@@ -1,0 +1,45 @@
+---
+import { getCollection } from 'astro:content';
+import Base from '../layouts/Base.astro';
+
+// 主页自动显示最新的 5 篇文章
+const posts = (await getCollection('blog'))
+  .sort((a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf())
+  .slice(0, 5);
+---
+
+<Base>
+  <section>
+    <h2 class="sec">// 最新文章 / RECENT LOGS</h2>
+    {posts.map((post) => (
+      <a class="panel post-card" href={`/blog/${post.id}/`}>
+        <p class="pc-title">{post.data.title}</p>
+        <p class="pc-meta">
+          {post.data.pubDate.toLocaleDateString('zh-CN')}
+          {post.data.tags.length > 0 && ` · ${post.data.tags.join(' / ')}`}
+        </p>
+        {post.data.description && <p class="pc-desc">{post.data.description}</p>}
+      </a>
+    ))}
+  </section>
+
+  <section>
+    <h2 class="sec">// 项目 / PROJECTS</h2>
+    <div class="panel pad">
+      <ul class="plain-list">
+        <li><a href="https://github.com">my-wiki —— 本站本体（改我，换成你的 GitHub 仓库）</a></li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <h2 class="sec">// 友链 / FRIENDS</h2>
+    <div class="panel pad">
+      <ul class="plain-list">
+        <li><a href="https://lianhuay.top">群主的 Wiki</a></li>
+        <li><a href="https://aria7.wiki">Aria 的 Wiki</a></li>
+        <li><a href="https://xenonben.cn">氙苯 XenonBen</a></li>
+      </ul>
+    </div>
+  </section>
+</Base>

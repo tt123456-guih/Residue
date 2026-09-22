@@ -1,0 +1,34 @@
+---
+import { getCollection, render } from 'astro:content';
+import Base from '../../layouts/Base.astro';
+import { SITE_TITLE } from '../../consts';
+
+export async function getStaticPaths() {
+  const posts = await getCollection('blog');
+  return posts.map((post) => ({
+    params: { slug: post.id },
+    props: { post },
+  }));
+}
+
+const { post } = Astro.props;
+const { Content } = await render(post);
+---
+
+<Base title={`${post.data.title} | ${SITE_TITLE}`} description={post.data.description}>
+  <article class="panel reading">
+    <h1>{post.data.title}</h1>
+    <p class="meta">
+      {post.data.pubDate.toLocaleDateString('zh-CN')}
+      {post.data.description && ` · ${post.data.description}`}
+    </p>
+    <Content />
+    {post.data.tags.length > 0 && (
+      <div class="tags" style="margin-top:2.2rem">
+        {post.data.tags.map((t) => (
+          <a class="tag" href={`/tags/${t}/`}>{t}</a>
+        ))}
+      </div>
+    )}
+  </article>
+</Base>

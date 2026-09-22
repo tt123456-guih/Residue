@@ -1,0 +1,25 @@
+---
+import { getCollection } from 'astro:content';
+import Base from '../../layouts/Base.astro';
+import { SITE_TITLE } from '../../consts';
+
+const posts = (await getCollection('blog')).sort(
+  (a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf()
+);
+---
+
+<Base title={`札记 | ${SITE_TITLE}`}>
+  <section>
+    <h2 class="sec">// 全部文章 · {posts.length} 篇</h2>
+    {posts.map((post) => (
+      <a class="panel post-card" href={`/blog/${post.id}/`}>
+        <p class="pc-title">{post.data.title}</p>
+        <p class="pc-meta">
+          {post.data.pubDate.toLocaleDateString('zh-CN')}
+          {post.data.tags.length > 0 && ` · ${post.data.tags.join(' / ')}`}
+        </p>
+        {post.data.description && <p class="pc-desc">{post.data.description}</p>}
+      </a>
+    ))}
+  </section>
+</Base>

@@ -1,0 +1,489 @@
+---
+// 全站布局：深空 HUD 视觉系统全部集中在这里
+// 改配色 -> :root 变量；改粒子/波形参数 -> 底部 <script>
+import { getCollection } from 'astro:content';
+import { SITE_TITLE, SITE_OWNER } from '../consts';
+
+const { title = SITE_TITLE, description = `${SITE_OWNER} 的个人博客` } = Astro.props;
+
+const posts = await getCollection('blog');
+const tagMap = new Map<string, number>();
+for (const p of posts) for (const t of p.data.tags) tagMap.set(t, (tagMap.get(t) ?? 0) + 1);
+const tags = [...tagMap.entries()].sort((a, b) => b[1] - a[1]);
+
+const year = new Date().getFullYear();
+const path = Astro.url.pathname;
+const isActive = (href: string) => (href === '/' ? path === '/' : path.startsWith(href));
+---
+
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content={description} />
+    <meta name="theme-color" content="#04080a" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>{title}</title>
+  </head>
+  <body>
+    <!-- 背景层：星尘画布 / 坐标网格 / 星尘光晕 / 神圣几何 / 扫描流光 -->
+    <canvas id="fx-dust" aria-hidden="true"></canvas>
+    <div class="bg-grid" aria-hidden="true"></div>
+    <div class="bg-halo" aria-hidden="true"></div>
+    <div class="bg-geo" aria-hidden="true">
+      <svg viewBox="0 0 220 220" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <g stroke="currentColor" stroke-width="0.6">
+          <circle cx="110" cy="110" r="104" />
+          <circle cx="110" cy="110" r="82" stroke-dasharray="2 5" />
+          <circle cx="110" cy="110" r="58" />
+          <circle cx="110" cy="52" r="29" />
+          <circle cx="110" cy="168" r="29" />
+          <circle cx="60" cy="81" r="29" />
+          <circle cx="160" cy="81" r="29" />
+          <circle cx="60" cy="139" r="29" />
+          <circle cx="160" cy="139" r="29" />
+          <circle cx="110" cy="110" r="29" />
+        </g>
+      </svg>
+    </div>
+    <div class="bg-scan" aria-hidden="true"></div>
+
+    <div class="frame">
+      <!-- 顶部全息导航 -->
+      <header class="panel nav-panel">
+        <div class="brand">
+          <span class="led"></span>
+          <a class="brand-link" href="/">{SITE_TITLE}</a>
+          <span class="brand-sub">XUANSHU · 众妙之门</span>
+        </div>
+        <nav>
+          <a href="/" class={isActive('/') ? 'active' : ''}>主页</a>
+          <a href="/blog" class={isActive('/blog') ? 'active' : ''}>札记</a>
+          <a href="https://github.com">GitHub ↗</a>
+        </nav>
+      </header>
+
+      <div class="layout">
+        <main>
+          <slot />
+        </main>
+
+        <!-- 侧边数据导航面板 -->
+        <aside class="sidebar">
+          <section class="panel side-panel">
+            <h3 class="panel-title">// 参数读数</h3>
+            <div class="readouts">
+              <div class="ro"><span>LOCAL</span><b id="hud-clock">--:--:--</b></div>
+              <div class="ro"><span>UPTIME</span><b id="hud-uptime">T+00:00:00</b></div>
+              <div class="ro"><span>SIGNAL</span><b id="hud-signal">--.-%</b></div>
+              <div class="ro"><span>NODE</span><b>SOL-3 / CN</b></div>
+            </div>
+          </section>
+
+          <section class="panel side-panel">
+            <h3 class="panel-title">// 粒子地球</h3>
+            <canvas id="fx-globe"></canvas>
+            <p class="cap">LAT 34.74 · LON 113.62 · ALT 408 KM</p>
+          </section>
+
+          <section class="panel side-panel">
+            <h3 class="panel-title">// 波形监测</h3>
+            <canvas id="fx-wave"></canvas>
+            <p class="cap">CH-01 · 432.8 HZ · STABLE</p>
+          </section>
+
+          <section class="panel side-panel">
+            <h3 class="panel-title">// 标签</h3>
+            <div class="tags">
+              {tags.map(([t, n]) => (
+                <a class="tag" href={`/tags/${t}/`}>{t}<i>{n}</i></a>
+              ))}
+            </div>
+          </section>
+
+          <section class="panel side-panel">
+            <h3 class="panel-title">// 导航</h3>
+            <ul class="side-nav">
+              <li><a href="/">主页 / HOME</a></li>
+              <li><a href="/blog">札记 / LOG</a></li>
+              <li><a href="https://github.com">GITHUB ↗</a></li>
+            </ul>
+          </section>
+        </aside>
+      </div>
+
+      <footer class="panel foot">
+        <span>© {year} {SITE_OWNER}</span>
+        <span class="muted">SYS NOMINAL · POWERED BY ASTRO · ALL SYSTEMS OPERATIONAL</span>
+      </footer>
+    </div>
+
+    <script>
+      const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+      function fit(c: HTMLCanvasElement) {
+        const r = c.getBoundingClientRect();
+        c.width = Math.max(1, Math.round(r.width * dpr));
+        c.height = Math.max(1, Math.round(r.height * dpr));
+        const ctx = c.getContext('2d')!;
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        return { ctx, w: r.width, h: r.height };
+      }
+
+      /* ---------- 星尘背景 ---------- */
+      const dustCv = document.getElementById('fx-dust') as HTMLCanvasElement;
+      let dust = [] as Array<{ x: number; y: number; vx: number; vy: number; r: number; ph: number; sp: number }>;
+      let dustG = { ctx: null as CanvasRenderingContext2D | null, w: 0, h: 0 };
+      function initDust() {
+        const g = fit(dustCv);
+        dustG = g;
+        dust = [];
+        const n = Math.min(150, Math.floor((g.w * g.h) / 12000));
+        for (let i = 0; i < n; i++) {
+          const r = Math.random();
+          dust.push({
+            x: Math.random() * g.w, y: Math.random() * g.h,
+            vx: (Math.random() - 0.5) * 0.08, vy: (Math.random() - 0.5) * 0.06,
+            r: 0.4 + r * 1.3, ph: r * 6.28, sp: 0.4 + r,
+          });
+        }
+      }
+      function drawDust(t: number) {
+        const { ctx, w, h } = dustG;
+        if (!ctx) return;
+        ctx.clearRect(0, 0, w, h);
+        for (const p of dust) {
+          p.x += p.vx; p.y += p.vy;
+          if (p.x < 0) p.x = w; if (p.x > w) p.x = 0;
+          if (p.y < 0) p.y = h; if (p.y > h) p.y = 0;
+          const a = 0.06 + 0.26 * (0.5 + 0.5 * Math.sin(p.ph + t * 0.001 * p.sp));
+          ctx.fillStyle = `rgba(190,230,224,${a.toFixed(3)})`;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.r, 0, 6.283);
+          ctx.fill();
+        }
+      }
+
+      /* ---------- 粒子地球 + 星环 ---------- */
+      const globeCv = document.getElementById('fx-globe') as HTMLCanvasElement;
+      const N = 240;
+      const sphere: Array<[number, number, number]> = [];
+      for (let i = 0; i < N; i++) {
+        const y = 1 - (2 * i) / (N - 1);
+        const r = Math.sqrt(1 - y * y);
+        const th = i * 2.39996;
+        sphere.push([Math.cos(th) * r, y, Math.sin(th) * r]);
+      }
+      let ry = 0;
+      let globeG = { ctx: null as CanvasRenderingContext2D | null, w: 0, h: 0 };
+      function initGlobe() { globeG = fit(globeCv); }
+      function drawGlobe() {
+        const { ctx, w, h } = globeG;
+        if (!ctx) return;
+        ctx.clearRect(0, 0, w, h);
+        ry += 0.004;
+        const R = Math.min(w, h) * 0.34, cx = w / 2, cy = h / 2;
+        const sY = Math.sin(ry), cY = Math.cos(ry), tilt = -0.35, sT = Math.sin(tilt), cT = Math.cos(tilt);
+        for (const [px, py, pz] of sphere) {
+          const x = px * cY + pz * sY;
+          const z = -px * sY + pz * cY;
+          const y2 = py * cT - z * sT;
+          const z2 = py * sT + z * cT;
+          const s = 1 / (1.9 - z2 * 0.9);
+          const a = 0.12 + 0.7 * ((z2 + 1) / 2);
+          const sz = Math.max(0.6, 1.7 * s);
+          ctx.fillStyle = `rgba(95,232,201,${a.toFixed(3)})`;
+          ctx.fillRect(cx + x * R * s - sz / 2, cy + y2 * R * s - sz / 2, sz, sz);
+        }
+        // 星环（两道椭圆 + 环上粒子）
+        for (const [k, al] of [[1.45, 0.3], [1.66, 0.12]] as Array<[number, number]>) {
+          ctx.strokeStyle = `rgba(95,232,201,${al})`;
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.ellipse(cx, cy, R * k, R * k * 0.36, -0.42, 0, 6.283);
+          ctx.stroke();
+        }
+        for (let i = 0; i < 60; i++) {
+          const an = (i / 60) * 6.283 + ry * 0.25;
+          const ex = Math.cos(an) * R * 1.45, ey = Math.sin(an) * R * 1.45 * 0.36;
+          const rx = ex * Math.cos(-0.42) - ey * Math.sin(-0.42);
+          const ryy = ex * Math.sin(-0.42) + ey * Math.cos(-0.42);
+          ctx.fillStyle = 'rgba(170,255,236,0.5)';
+          ctx.fillRect(cx + rx - 0.7, cy + ryy - 0.7, 1.4, 1.4);
+        }
+      }
+
+      /* ---------- 波形 ---------- */
+      const waveCv = document.getElementById('fx-wave') as HTMLCanvasElement;
+      let wt = 0;
+      let waveG = { ctx: null as CanvasRenderingContext2D | null, w: 0, h: 0 };
+      function initWave() { waveG = fit(waveCv); }
+      function drawWave() {
+        const { ctx, w, h } = waveG;
+        if (!ctx) return;
+        ctx.clearRect(0, 0, w, h);
+        wt += 0.035;
+        ctx.lineWidth = 1.3;
+        ctx.shadowColor = 'rgba(95,232,201,0.5)';
+        ctx.shadowBlur = 6;
+        for (const [ph, al] of [[0, 0.9], [2.1, 0.35]] as Array<[number, number]>) {
+          ctx.strokeStyle = `rgba(95,232,201,${al})`;
+          ctx.beginPath();
+          for (let x = 0; x <= w; x += 2) {
+            const y = h / 2 + Math.sin(x * 0.05 + wt + ph) * h * 0.3 * Math.sin(x * 0.009 + wt * 0.6 + ph);
+            x === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+          }
+          ctx.stroke();
+        }
+        ctx.shadowBlur = 0;
+      }
+
+      initDust(); initGlobe(); initWave();
+
+      function frame(t: number) {
+        if (!document.hidden) {
+          drawDust(t);
+          drawGlobe();
+          drawWave();
+        }
+        if (!reduced) requestAnimationFrame(frame);
+      }
+      requestAnimationFrame(frame);
+
+      let rsz: number | undefined;
+      addEventListener('resize', () => {
+        clearTimeout(rsz);
+        rsz = setTimeout(() => { initDust(); initGlobe(); initWave(); }, 150);
+      });
+
+      /* ---------- 参数读数 ---------- */
+      const clockEl = document.getElementById('hud-clock')!;
+      const upEl = document.getElementById('hud-uptime')!;
+      const sigEl = document.getElementById('hud-signal')!;
+      const t0 = Date.now();
+      const pad = (n: number) => String(n).padStart(2, '0');
+      function tick() {
+        clockEl.textContent = new Date().toLocaleTimeString('zh-CN', { hour12: false });
+        const s = Math.floor((Date.now() - t0) / 1000);
+        upEl.textContent = `T+${pad(Math.floor(s / 3600))}:${pad(Math.floor(s / 60) % 60)}:${pad(s % 60)}`;
+        sigEl.textContent = (96 + Math.random() * 3.4).toFixed(1) + '%';
+      }
+      tick();
+      if (!reduced) setInterval(tick, 1000);
+    </script>
+
+    <style is:global>
+      :root {
+        --bg: #04080a;
+        --panel-a: rgba(12, 24, 26, 0.62);
+        --panel-b: rgba(6, 12, 14, 0.55);
+        --line: rgba(96, 232, 205, 0.16);
+        --glow: rgba(96, 232, 205, 0.55);
+        --accent: #5fe8c9;
+        --accent-dim: #3aa895;
+        --fg: #d8e6e1;
+        --muted: #7e9691;
+        --faint: #54696a;
+      }
+
+      html { color-scheme: dark; scroll-behavior: smooth; }
+
+      body {
+        margin: 0;
+        background:
+          radial-gradient(1200px 800px at 82% -10%, rgba(28, 78, 76, 0.14), transparent 60%),
+          radial-gradient(900px 700px at -10% 110%, rgba(36, 56, 86, 0.12), transparent 55%),
+          var(--bg);
+        color: var(--fg);
+        font: 16px/1.8 "Cascadia Code", Consolas, "JetBrains Mono", ui-monospace, monospace;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      ::selection { background: rgba(95, 232, 201, 0.25); }
+      ::-webkit-scrollbar { width: 10px; }
+      ::-webkit-scrollbar-track { background: var(--bg); }
+      ::-webkit-scrollbar-thumb { background: rgba(95, 232, 201, 0.18); border-radius: 5px; }
+
+      /* ===== 背景层 ===== */
+      #fx-dust { position: fixed; inset: 0; z-index: -5; width: 100%; height: 100%; pointer-events: none; }
+
+      .bg-grid {
+        position: fixed; inset: 0; z-index: -4; pointer-events: none;
+        background-image:
+          linear-gradient(rgba(150, 180, 175, 0.05) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(150, 180, 175, 0.05) 1px, transparent 1px),
+          linear-gradient(rgba(150, 180, 175, 0.028) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(150, 180, 175, 0.028) 1px, transparent 1px);
+        background-size: 220px 220px, 220px 220px, 44px 44px, 44px 44px;
+        mask-image: radial-gradient(ellipse at 50% 30%, #000 30%, transparent 90%);
+      }
+
+      .bg-halo {
+        position: fixed; inset: 0; z-index: -3; pointer-events: none;
+        background:
+          radial-gradient(420px 300px at 85% 18%, rgba(95, 232, 201, 0.05), transparent 70%),
+          radial-gradient(520px 380px at 12% 78%, rgba(120, 160, 255, 0.045), transparent 70%);
+      }
+
+      .bg-geo {
+        position: fixed; right: -60px; bottom: -60px; width: 340px; height: 340px;
+        z-index: -2; pointer-events: none; color: var(--accent-dim); opacity: 0.07;
+        animation: geo-spin 240s linear infinite;
+      }
+      @keyframes geo-spin { to { transform: rotate(360deg); } }
+
+      .bg-scan { position: fixed; inset: 0; z-index: 60; pointer-events: none; overflow: hidden; }
+      .bg-scan::before {
+        content: ""; position: absolute; left: 0; right: 0; top: -160px; height: 140px;
+        background: linear-gradient(180deg, transparent, rgba(95, 232, 201, 0.04) 70%, rgba(95, 232, 201, 0.1) 99%, transparent);
+        animation: sweep 9s linear infinite;
+      }
+      @keyframes sweep { to { transform: translateY(calc(100vh + 320px)); } }
+
+      /* ===== 全息面板 ===== */
+      .panel {
+        position: relative;
+        background: linear-gradient(165deg, var(--panel-a), var(--panel-b));
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+        box-shadow: 0 14px 44px rgba(0, 0, 0, 0.45), inset 0 0 30px rgba(95, 232, 201, 0.02);
+      }
+      .panel::before, .panel::after {
+        content: ""; position: absolute; width: 12px; height: 12px; pointer-events: none;
+        border-color: var(--glow); opacity: 0.8;
+      }
+      .panel::before { top: -1px; left: -1px; border-top: 1px solid; border-left: 1px solid; }
+      .panel::after { bottom: -1px; right: -1px; border-bottom: 1px solid; border-right: 1px solid; }
+
+      .panel-title {
+        font-size: 0.72rem; font-weight: 600; color: var(--accent-dim);
+        letter-spacing: 0.16em; margin: 0 0 0.8rem;
+      }
+
+      .frame { max-width: 1180px; margin: 0 auto; padding: 26px 20px 44px; position: relative; }
+
+      /* 顶部导航 */
+      .nav-panel {
+        display: flex; align-items: center; justify-content: space-between;
+        gap: 1rem; flex-wrap: wrap; padding: 0.85rem 1.15rem; margin-bottom: 22px;
+      }
+      .brand { display: flex; align-items: center; gap: 0.65rem; }
+      .led {
+        width: 8px; height: 8px; border-radius: 50%; flex: none;
+        background: var(--accent); box-shadow: 0 0 10px var(--glow);
+        animation: pulse 2.4s ease-in-out infinite;
+      }
+      @keyframes pulse { 50% { opacity: 0.35; } }
+      .brand-link { color: var(--fg); text-decoration: none; font-weight: 700; letter-spacing: 0.06em; }
+      .brand-link:hover { color: var(--accent); }
+      .brand-sub { color: var(--faint); font-size: 0.68rem; letter-spacing: 0.22em; }
+      .nav-panel nav a {
+        color: var(--muted); text-decoration: none; margin-left: 1.3rem;
+        font-size: 0.9rem; letter-spacing: 0.08em;
+      }
+      .nav-panel nav a:hover, .nav-panel nav a.active {
+        color: var(--accent); text-shadow: 0 0 14px var(--glow);
+      }
+
+      /* 主布局：内容 + 侧边栏 */
+      .layout { display: grid; grid-template-columns: 1fr; gap: 22px; }
+      @media (min-width: 1024px) { .layout { grid-template-columns: minmax(0, 1fr) 282px; } }
+      main { min-width: 0; }
+
+      h2.sec {
+        font-size: 0.78rem; font-weight: 600; color: var(--accent-dim);
+        letter-spacing: 0.18em; margin: 0 0 1rem; padding-bottom: 0.5rem;
+        border-bottom: 1px dashed rgba(96, 232, 205, 0.18);
+      }
+
+      /* 文章卡片 */
+      .post-card {
+        display: block; text-decoration: none; padding: 1rem 1.25rem; margin-bottom: 14px;
+        transition: border-color 0.25s, transform 0.25s, box-shadow 0.25s;
+      }
+      .post-card:hover {
+        border-color: rgba(95, 232, 201, 0.42);
+        box-shadow: 0 18px 50px rgba(0, 0, 0, 0.5), 0 0 26px rgba(95, 232, 201, 0.07);
+        transform: translateY(-2px);
+      }
+      .pc-title { color: var(--fg); font-size: 1.02rem; margin: 0 0 0.3rem; }
+      .post-card:hover .pc-title { color: var(--accent); }
+      .pc-meta { color: var(--muted); font-size: 0.78rem; letter-spacing: 0.05em; margin: 0; }
+      .pc-desc { color: var(--muted); font-size: 0.88rem; margin: 0.45rem 0 0; }
+
+      .pad { padding: 1rem 1.25rem; }
+      .plain-list { list-style: none; margin: 0; padding: 0; }
+      .plain-list li { padding: 0.28rem 0; }
+      .plain-list a { color: var(--accent); }
+      .muted { color: var(--muted); }
+
+      /* 侧边栏 */
+      .side-panel { padding: 1rem 1.1rem; margin-bottom: 18px; }
+      .readouts .ro {
+        display: flex; justify-content: space-between; font-size: 0.78rem;
+        padding: 0.3rem 0; border-bottom: 1px dotted rgba(96, 232, 205, 0.12);
+      }
+      .ro span { color: var(--faint); letter-spacing: 0.14em; }
+      .ro b { color: var(--accent); font-weight: 400; }
+      #fx-globe { width: 100%; height: 185px; display: block; }
+      #fx-wave { width: 100%; height: 56px; display: block; }
+      .cap { color: var(--faint); font-size: 0.66rem; letter-spacing: 0.12em; margin: 0.5rem 0 0; }
+
+      .tags { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+      .tag {
+        color: var(--accent-dim); border: 1px solid rgba(96, 232, 205, 0.22);
+        padding: 0.08rem 0.55rem; border-radius: 3px; font-size: 0.75rem;
+        text-decoration: none; display: inline-flex; align-items: center; gap: 0.35rem;
+        transition: color 0.2s, border-color 0.2s, box-shadow 0.2s;
+      }
+      .tag i { font-style: normal; color: var(--faint); font-size: 0.66rem; }
+      .tag:hover { color: var(--accent); border-color: rgba(95, 232, 201, 0.5); box-shadow: 0 0 10px rgba(95, 232, 201, 0.15); }
+
+      .side-nav { list-style: none; margin: 0; padding: 0; font-size: 0.85rem; }
+      .side-nav a { color: var(--muted); text-decoration: none; display: block; padding: 0.35rem 0; }
+      .side-nav a:hover { color: var(--accent); }
+
+      .foot {
+        display: flex; justify-content: space-between; gap: 1rem; flex-wrap: wrap;
+        padding: 0.9rem 1.25rem; margin-top: 26px; font-size: 0.74rem;
+        color: var(--muted); letter-spacing: 0.08em;
+      }
+
+      /* 正文排版 */
+      article.reading { padding: 1.7rem 1.9rem; }
+      article.reading h1 { font-size: 1.45rem; margin: 0 0 0.35rem; color: #ecf7f3; }
+      article.reading .meta { color: var(--muted); font-size: 0.78rem; letter-spacing: 0.06em; margin: 0 0 1.8rem; }
+      article.reading h2 { font-size: 1.12rem; margin: 2.1rem 0 0.7rem; color: var(--accent); font-weight: 600; }
+      article.reading h3 { font-size: 1rem; margin: 1.6rem 0 0.6rem; color: var(--accent-dim); }
+      article.reading p, article.reading li { color: #c8d8d3; }
+      article.reading a { color: var(--accent); }
+      article.reading code {
+        background: rgba(95, 232, 201, 0.08); padding: 0.1em 0.4em;
+        border-radius: 4px; font-size: 0.88em; color: #9df0dc;
+      }
+      article.reading pre {
+        background: rgba(3, 8, 10, 0.75); border: 1px solid var(--line);
+        padding: 1rem 1.15rem; border-radius: 8px; overflow-x: auto;
+      }
+      article.reading pre code { background: none; padding: 0; }
+      article.reading blockquote {
+        border-left: 2px solid rgba(95, 232, 201, 0.35); margin: 1.2rem 0;
+        padding: 0.2rem 1rem; color: var(--muted); background: rgba(95, 232, 201, 0.03);
+      }
+      article.reading img { max-width: 100%; border-radius: 8px; border: 1px solid var(--line); }
+      article.reading hr { border: none; border-top: 1px dashed rgba(96, 232, 205, 0.18); margin: 2rem 0; }
+
+      @media (max-width: 640px) {
+        article.reading { padding: 1.25rem 1.1rem; }
+        .nav-panel nav a { margin-left: 0.9rem; }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after { animation: none !important; transition: none !important; }
+      }
+    </style>
+  </body>
+</html>

@@ -1,0 +1,29 @@
+---
+import { getCollection } from 'astro:content';
+import Base from '../../layouts/Base.astro';
+import { SITE_TITLE } from '../../consts';
+
+export async function getStaticPaths() {
+  const posts = await getCollection('blog');
+  const tags = new Set(posts.flatMap((p) => p.data.tags));
+  return [...tags].map((tag) => ({ params: { tag }, props: { tag } }));
+}
+
+const { tag } = Astro.props;
+const posts = (await getCollection('blog'))
+  .filter((p) => p.data.tags.includes(tag))
+  .sort((a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf());
+---
+
+<Base title={`标签「${tag}」| ${SITE_TITLE}`}>
+  <section>
+    <h2 class="sec">// 标签 · {tag} · {posts.length} 篇</h2>
+    {posts.map((post) => (
+      <a class="panel post-card" href={`/blog/${post.id}/`}>
+        <p class="pc-title">{post.data.title}</p>
+        <p class="pc-meta">{post.data.pubDate.toLocaleDateString('zh-CN')}</p>
+        {post.data.description && <p class="pc-desc">{post.data.description}</p>}
+      </a>
+    ))}
+  </section>
+</Base>
